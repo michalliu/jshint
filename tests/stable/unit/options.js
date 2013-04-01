@@ -68,7 +68,13 @@ exports.latedef = function (test) {
 		.addError(10, "'foo' is already defined.")
 		.test(src1);
 
-	// When latedef is true, JSHint must not tolerate the use before definition
+	// When latedef is "nofunc", JSHint must not tolerate the use before definition
+	TestRun(test)
+		.addError(10, "'vr' was used before it was defined.")
+		.addError(18, "Inner functions should be listed at the top of the outer function.")
+		.test(src, { latedef: "nofunc" });
+
+	// When latedef is true, JSHint must not tolerate the use before definition for functions
 	TestRun(test)
 		.addError(2, "'fn' was used before it was defined.")
 		.addError(6, "'fn1' was used before it was defined.")
@@ -105,6 +111,12 @@ exports['combination of latedef and undef'] = function (test) {
 		.addError(46, "'h' was used before it was defined.")
 		.test(src, { latedef: true, undef: false });
 
+	// But we get all the functions warning if we disable latedef func
+	TestRun(test)
+		.addError(41, "'q' was used before it was defined.")
+		.addError(46, "'h' was used before it was defined.")
+		.test(src, { latedef: "nofunc", undef: false });
+
 	// If we warn on both options we get all the warnings.
 	TestRun(test)
 		.addError(5, "'func2' was used before it was defined.")
@@ -117,6 +129,14 @@ exports['combination of latedef and undef'] = function (test) {
 		.addError(41, "'q' was used before it was defined.")
 		.addError(46, "'h' was used before it was defined.")
 		.test(src, { latedef: true, undef: true });
+
+	// If we use latedef: "nofunc", we don't get the functions warning
+	TestRun(test)
+		.addError(29, "'hello' is not defined.")
+		.addError(35, "'world' is not defined.")
+		.addError(41, "'q' was used before it was defined.")
+		.addError(46, "'h' was used before it was defined.")
+		.test(src, { latedef: "nofunc", undef: true });
 
 	test.done();
 };
@@ -318,6 +338,8 @@ exports.asi = function (test) {
 
 	TestRun(test, 2)
 		.addError(2, "Missing semicolon.") // throw on "use strict", even option asi is used
+		.addError(4, "Line breaking error 'return'.")
+		.addError(17, "Line breaking error 'return'.")
 		.test(src, { asi: true });
 
 	test.done();
@@ -416,22 +438,79 @@ exports.unused = function (test) {
 
 	TestRun(test).test(src);
 
-	TestRun(test)
-		.addError(1, "'a' is defined but never used.")
-		.addError(6, "'f' is defined but never used.")
-		.addError(7, "'c' is defined but never used.")
-		.addError(15, "'foo' is defined but never used.")
-		.addError(20, "'bar' is defined but never used.")
-		.test(src, { unused: true });
+	var var_errors = [
+		[1, "'a' is defined but never used."],
+		[7, "'c' is defined but never used."],
+		[15, "'foo' is defined but never used."],
+		[20, "'bar' is defined but never used."]
+	];
 
+	var last_param_errors = [[6, "'f' is defined but never used."]];
+	var all_param_errors = [[15, "'err' is defined but never used."]];
+	var true_run = TestRun(test);
+
+	var_errors.concat(last_param_errors).forEach(function (e) {
+		true_run.addError.apply(true_run, e);
+	});
+
+	true_run.test(src, { unused: true });
 	test.ok(!JSHINT(src, { unused: true }));
 
+	// Test checking all function params via unused="strict"
+	var all_run = TestRun(test);
+	var_errors.concat(last_param_errors, all_param_errors).forEach(function (e) {
+		all_run.addError.apply(true_run, e);
+	});
+
+	all_run.test(src, {unused: "strict"});
+
+	// Test checking everything except function params
+	var vars_run = TestRun(test);
+	var_errors.forEach(function (e) { vars_run.addError.apply(vars_run, e); });
+	vars_run.test(src, {unused: "vars"});
+
 	var unused = JSHINT.data().unused;
-	test.equal(5, unused.length);
+	test.equal(6, unused.length);
 	test.ok(unused.some(function (err) { return err.line === 1 && err.name === "a"; }));
 	test.ok(unused.some(function (err) { return err.line === 6 && err.name === "f"; }));
 	test.ok(unused.some(function (err) { return err.line === 7 && err.name === "c"; }));
 	test.ok(unused.some(function (err) { return err.line === 15 && err.name === "foo"; }));
+
+	test.done();
+};
+
+// Regressions for "unused" getting overwritten via comment (GH-778)
+exports['unused overrides'] = function (test) {
+	var code;
+	
+	code = ['function foo(a) {', '/*jshint unused:false */', '}', 'foo();'];
+	TestRun(test).test(code, {unused: true});
+	
+	code = ['function foo(a, b) {', '/*jshint unused:vars */', 'var i = 3;', '}', 'foo();'];
+	TestRun(test)
+		.addError(3, "'i' is defined but never used.")
+		.test(code, {unused: true});
+
+	code = ['function foo(a, b) {', '/*jshint unused:true */', 'var i = 3;', '}', 'foo();'];
+	TestRun(test)
+		.addError(1, "'b' is defined but never used.")
+		.addError(3, "'i' is defined but never used.")
+		.test(code, {unused: "strict"});
+
+	code = ['function foo(a, b) {', '/*jshint unused:strict */', 'var i = 3;', '}', 'foo();'];
+	TestRun(test)
+		.addError(1, "'a' is defined but never used.")
+		.addError(1, "'b' is defined but never used.")
+		.addError(3, "'i' is defined but never used.")
+		.test(code, {unused: true});
+
+	code = ['/*jshint unused:vars */', 'function foo(a, b) {}', 'foo();'];
+	TestRun(test).test(code, {unused: "strict"});
+	
+	code = ['/*jshint unused:vars */', 'function foo(a, b) {', 'var i = 3;', '}', 'foo();'];
+	TestRun(test)
+		.addError(3, "'i' is defined but never used.")
+		.test(code, {unused: "strict"});
 
 	test.done();
 };
@@ -724,6 +803,19 @@ exports.immed = function (test) {
 					 "is the result of a function, and not the function itself.")
 		.addError(13, "Wrapping non-IIFE function literals in parens is unnecessary.")
 		.test(src, { immed: true });
+
+	// Regression for GH-900
+	TestRun(test)
+		.addError(1, "Expected an assignment or function call and instead saw an expression.")
+		.addError(1, "Missing semicolon.")
+		.addError(1, "Expected an identifier and instead saw ')'.")
+		.addError(1, "Expected an assignment or function call and instead saw an expression.")
+		.addError(1, "Unmatched '{'.")
+		.addError(1, "Unmatched '('.")
+		.addError(1, "Wrapping non-IIFE function literals in parens is unnecessary.")
+		.addError(1, "Expected an assignment or function call and instead saw an expression.")
+		.addError(1, "Missing semicolon.")
+		.test("(function () { if (true) { }());", { immed: true });
 
 	test.done();
 };

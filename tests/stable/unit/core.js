@@ -1,7 +1,7 @@
 "use strict";
 
 var JSHINT	= require('../../../src/stable/jshint.js').JSHINT;
-var fs		= require('fs');
+var fs      = require('fs');
 var TestRun = require("../helpers/testhelper").setup.testRun;
 
 /**
@@ -27,7 +27,7 @@ exports.testCustomGlobals = function (test) {
 
 	// Regression test (GH-665)
 	code = [
-		"//global bar",
+		"/*global bar*/",
 		"foo = {};",
 		"bar = {};"
 	];
@@ -178,7 +178,7 @@ exports.switchFallThrough = function (test) {
 	TestRun(test)
 		.addError(3, "Expected a 'break' statement before 'case'.")
 		.addError(18, "Expected a 'break' statement before 'default'.")
-		.addError(36, "Unexpected ':'.")
+		.addError(40, "Unexpected ':'.")
 		.test(src);
 
 	test.done();
@@ -230,6 +230,19 @@ exports.testMissingSpaces = function (test) {
 	test.done();
 };
 
+exports.testGoogleClosureLinterCompatibility = function (test) {
+	var code = "var a = function() { return; };";
+
+	TestRun(test)
+		.addError(1, "Missing space after 'function'.")
+		.test(code, { white: true });
+
+	TestRun(test)
+		.test(code, { white: true, gcl: true });
+
+	test.done();
+};
+
 exports.functionScopedOptions = function (test) {
 	var src = fs.readFileSync(__dirname + '/fixtures/functionScopedOptions.js', 'utf8');
 	TestRun(test)
@@ -259,6 +272,15 @@ exports.jslintRenamed = function (test) {
 	var src = fs.readFileSync(__dirname + '/fixtures/jslintRenamed.js', 'utf8');
 	TestRun(test)
 		.addError(4, "Expected '===' and instead saw '=='.")
+		.test(src);
+
+	test.done();
+};
+
+exports.jslintSloppy = function (test) {
+	var src = "/*jslint sloppy:true */ function test() { return 1; }";
+
+	TestRun(test)
 		.test(src);
 
 	test.done();
@@ -444,11 +466,9 @@ exports.testInvalidSource = function (test) {
 		.test({});
 
 	TestRun(test)
-		.addError(0, "Input is empty.")
 		.test("");
 
 	TestRun(test)
-		.addError(0, "Input is empty.")
 		.test([]);
 
 	test.done();
@@ -488,7 +508,7 @@ exports.NumberNaN = function (test) {
 exports.htmlEscapement = function (test) {
 	TestRun(test).test("var a = '<\\!--';");
 	TestRun(test)
-		.addError(1, "Bad escaping.")
+		.addError(1, "Bad or unnecessary escaping.")
 		.test("var a = '\\!';");
 
 	test.done();
@@ -516,13 +536,15 @@ exports.testReserved = function (test) {
 
 	TestRun(test)
 		.addError(1, "Expected an identifier and instead saw 'volatile' (a reserved word).")
+		.addError(5, "Expected an identifier and instead saw 'let' (a reserved word).")
 		.addError(10, "Expected an identifier and instead saw 'let' (a reserved word).")
 		.addError(14, "Expected an identifier and instead saw 'else' (a reserved word).")
+		.addError(14, "Reserved words as properties can be used under the 'es5' option.")
 		.test(src);
 
 	TestRun(test)
+		.addError(5, "Expected an identifier and instead saw 'let' (a reserved word).")
 		.addError(10, "Expected an identifier and instead saw 'let' (a reserved word).")
-		.addError(14, "Expected an identifier and instead saw 'else' (a reserved word).")
 		.test(src, { es5: true });
 
 	test.done();
@@ -535,15 +557,22 @@ exports.testES5Reserved = function (test) {
 
 	TestRun(test)
 		.addError(2, "Expected an identifier and instead saw 'default' (a reserved word).")
-		.addError(5, "Expected an identifier and instead saw 'default' (a reserved word).")
-		.addError(6, "Expected an identifier and instead saw 'new' (a reserved word).")
-		.addError(7, "Expected an identifier and instead saw 'class' (a reserved word).")
+		.addError(2, "Reserved words as properties can be used under the 'es5' option.")
+		.addError(3, "Unexpected 'in'.")
+		.addError(3, "Expected an identifier and instead saw 'in' (a reserved word).")
+		.addError(6, "Expected an identifier and instead saw 'default' (a reserved word).")
+		.addError(7, "Expected an identifier and instead saw 'new' (a reserved word).")
+		.addError(8, "Expected an identifier and instead saw 'class' (a reserved word).")
+		.addError(9, "Expected an identifier and instead saw 'default' (a reserved word).")
+		.addError(10, "Expected an identifier and instead saw 'in' (a reserved word).")
+		.addError(11, "Expected an identifier and instead saw 'in' (a reserved word).")
 		.test(src);
 
 	TestRun(test)
-		.addError(5, "Expected an identifier and instead saw 'default' (a reserved word).")
-		.addError(6, "Expected an identifier and instead saw 'new' (a reserved word).")
-		.addError(7, "Expected an identifier and instead saw 'class' (a reserved word).")
+		.addError(6, "Expected an identifier and instead saw 'default' (a reserved word).")
+		.addError(7, "Expected an identifier and instead saw 'new' (a reserved word).")
+		.addError(8, "Expected an identifier and instead saw 'class' (a reserved word).")
+		.addError(11, "Expected an identifier and instead saw 'in' (a reserved word).")
 		.test(src, { es5: true });
 
 	test.done();
@@ -597,6 +626,15 @@ exports.testForIn = function (test) {
 
 	TestRun(test)
 		.addError(2, "Creating global 'for' variable. Should be 'for (var i ...'.")
+		.test(src);
+
+	test.done();
+};
+
+exports.testRegexArray = function (test) {
+	var src = fs.readFileSync(__dirname + "/fixtures/regex_array.js", "utf8");
+
+	TestRun(test)
 		.test(src);
 
 	test.done();

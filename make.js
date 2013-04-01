@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-/*global ls:true, target:true, find: true, echo: true, cat:true, exit:true, exec: true */
+/*global ls, target, find, echo, cat, exit, exec, mkdir, test */
 
 "use strict";
 
 require("shelljs/make");
 var cli = require("cli");
+var pkg = require("./package.json");
 
 var TESTS = [
 	"tests/",
@@ -16,16 +17,22 @@ var TESTS = [
 var OPTIONS = JSON.parse(cat("./jshint.json"));
 
 target.all = function () {
+	target.build();
 	target.lint();
 	target.test();
-	target.build();
 };
 
 target.lint = function () {
 	var jshint = require("jshint").JSHINT;
-	var files = find("src").filter(function (file) {
-		return file.match(/\.js$/);
-	}).concat(ls(__dirname + "/*.js"));
+	var files = find("src")
+		.filter(function (file) {
+			return file.match(/\.js$/);
+		})
+		.concat(
+			ls(__dirname + "/*.js").filter(function (file) {
+				return file !== __dirname + "/demo.js";
+			})
+		);
 
 	TESTS.forEach(function (dir) {
 		ls(dir + "*.js").forEach(function (file) {
@@ -49,6 +56,7 @@ target.lint = function () {
 
 	if (Object.keys(failures).length === 0) {
 		cli.ok("All files passed.");
+		echo("\n");
 		return;
 	}
 
@@ -85,25 +93,37 @@ target.test = function () {
 	});
 
 	echo("Running tests...", "\n");
-	nodeunit.run(files);
+	nodeunit.run(files, null, function (err) {
+		exit(err ? 1 : 0);
+	});
 };
 
 target.build = function () {
 	var browserify = require("browserify");
-	var bundle = browserify({ debug: true, exports: [ "require" ] });
+	var bundle = browserify({ debug: true });
 
 	bundle.addEntry("./src/stable/jshint.js");
-	bundle.bundle().to("./dist/jshint.js");
+
+	if (!test("-e", "./dist")) {
+		mkdir("./dist");
+	}
+
+	echo("Building into dist/...", "\n");
+
+	bundle.append("JSHINT = require('/src/stable/jshint.js').JSHINT;");
+
+	[ "// " + pkg.version,
+		"var JSHINT;",
+		bundle.bundle()
+	].join("\n").to("./dist/jshint-" + pkg.version + ".js");
+
 	cli.ok("Bundle");
 
 	// Rhino
-	var rhino = cat("./dist/jshint.js", "./src/platforms/rhino.js");
+	var rhino = cat("./dist/jshint-" + pkg.version + ".js", "./src/platforms/rhino.js");
 	rhino = "#!/usr/bin/env rhino\n\n" + rhino;
-	rhino.to("./dist/jshint-rhino.js");
-	exec("chmod +x dist/jshint-rhino.js");
+	rhino.to("./dist/jshint-rhino-" + pkg.version + ".js");
+	exec("chmod +x dist/jshint-rhino-" + pkg.version + ".js");
 	cli.ok("Rhino");
-
-	// Windows Script Host
-	cat("./dist/jshint.js", "./src/platforms/wsh.js").to("./dist/jshint-wsh.js");
-	cli.ok("Windows Script Host");
+	echo("\n");
 };

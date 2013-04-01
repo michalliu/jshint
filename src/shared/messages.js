@@ -56,6 +56,14 @@ var errors = {
 	E038: "Variable {a} was not declared correctly.",
 	E039: "Function declarations are not invocable. Wrap the whole function invocation in parens.",
 	E040: "Each value should have its own case label.",
+	E041: "Unrecoverable syntax error.",
+	E042: "Stopping.",
+	E043: "Too many errors.",
+	E044: "'{a}' is already defined and can't be redefined.",
+	E045: "Invalid for each loop.",
+	E046: "A yield statement shall be within a generator function (with syntax: `function*`)",
+	E047: "A generator function shall contain a yield statement.",
+	E048: "Let declaration not directly within block."
 };
 
 var warnings = {
@@ -102,7 +110,7 @@ var warnings = {
 	W041: "Use '{a}' to compare with '{b}'.",
 	W042: "Avoid EOL escaping.",
 	W043: "Bad escaping of EOL. Use option multistr if needed.",
-	W044: "Bad escaping.",
+	W044: "Bad or unnecessary escaping.",
 	W045: "Bad number '{a}'.",
 	W046: "Don't use extra leading zeros '{a}'.",
 	W047: "A trailing decimal point can be confused with a dot: '{a}'.",
@@ -180,10 +188,13 @@ var warnings = {
 	W115: "Octal literals are not allowed in strict mode.",
 	W116: "Expected '{a}' and instead saw '{b}'.",
 	W117: "'{a}' is not defined.",
+	W118: "'{a}' is only available in Mozilla JavaScript extensions (use moz option).",
+	W119: "'{a}' is only available in ES6 (use esnext option)."
 };
 
 var info = {
-	I001: "Comma warnings can be turned off with 'laxcomma'."
+	I001: "Comma warnings can be turned off with 'laxcomma'.",
+	I002: "Reserved words as properties can be used under the 'es5' option."
 };
 
 exports.errors = {};

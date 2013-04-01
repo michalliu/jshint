@@ -423,7 +423,7 @@ Lexer.prototype = {
 		var ch2 = this.peek(1);
 		var rest = this.input.substr(2);
 		var startLine = this.line;
-		var startChar = this.character;
+		var startChar = this.char;
 
 		// Create a comment token object and make sure it
 		// has all the data JSHint needs to work with special
@@ -445,13 +445,19 @@ Lexer.prototype = {
 					return;
 				}
 
+				// Don't recognize any special comments other than jshint for single-line
+				// comments. This introduced many problems with legit comments.
+				if (label === "//" && str !== "jshint") {
+					return;
+				}
+
 				if (body.substr(0, str.length) === str) {
 					isSpecial = true;
 					label = label + str;
 					body = body.substr(str.length);
 				}
 
-				if (body.charAt(0) === " " && body.substr(1, str.length) === str) {
+				if (!isSpecial && body.charAt(0) === " " && body.substr(1, str.length) === str) {
 					isSpecial = true;
 					label = label + " " + str;
 					body = body.substr(str.length + 1);
@@ -881,7 +887,7 @@ Lexer.prototype = {
 			char = this.peek(index);
 
 			if (char === "+" || char === "-") {
-				value += this.input(index);
+				value += this.peek(index);
 				index += 1;
 			}
 
@@ -938,12 +944,20 @@ Lexer.prototype = {
 		}
 
 		// In JSON strings must always use double quotes.
-		if (state.jsonMode && quote !== "\"") {
-			this.trigger("warning", {
-				code: "W108",
-				line: this.line,
-				character: this.char // +1?
-			});
+		if (quote !== "\"") {
+			if (state.jsonMode === "probing") {
+				state.jsonWarnings.push({
+					code: "W108",
+					line: this.line,
+					character: this.char // +1?
+				});
+			} else if (state.jsonMode) {
+				this.trigger("warning", {
+					code: "W108",
+					line: this.line,
+					character: this.char // +1?
+				});
+			}
 		}
 
 		var value = "";
@@ -978,6 +992,12 @@ Lexer.prototype = {
 					if (!state.option.multistr) {
 						this.trigger("warning", {
 							code: "W043",
+							line: this.line,
+							character: this.char
+						});
+					} else if (state.jsonMode === "probing") {
+						state.jsonWarnings.push({
+							code: "W042",
 							line: this.line,
 							character: this.char
 						});
@@ -1032,7 +1052,14 @@ Lexer.prototype = {
 
 				switch (char) {
 				case "'":
-					if (state.jsonMode) {
+					if (state.jsonMode === "probing") {
+						state.jsonWarnings.push({
+							code: "W114",
+							line: this.line,
+							character: this.char,
+							data: [ "\\'" ]
+						});
+					} else if (state.jsonMode) {
 						this.trigger("warning", {
 							code: "W114",
 							line: this.line,
@@ -1061,7 +1088,7 @@ Lexer.prototype = {
 
 					// Octal literals fail in strict mode.
 					// Check if the number is between 00 and 07.
-					var n = parseInt(this.peek(), 10);
+					var n = parseInt(this.peek(1), 10);
 					if (n >= 0 && n <= 7 && state.directive["use strict"]) {
 						this.trigger("warning", {
 							code: "W115",
@@ -1075,7 +1102,14 @@ Lexer.prototype = {
 					jump = 5;
 					break;
 				case "v":
-					if (state.jsonMode) {
+					if (state.jsonMode === "probing") {
+						state.jsonWarnings.push({
+							code: "W114",
+							line: this.line,
+							character: this.char,
+							data: [ "\\v" ]
+						});
+					} else if (state.jsonMode) {
 						this.trigger("warning", {
 							code: "W114",
 							line: this.line,
@@ -1089,7 +1123,14 @@ Lexer.prototype = {
 				case "x":
 					var	x = parseInt(this.input.substr(1, 2), 16);
 
-					if (state.jsonMode) {
+					if (state.jsonMode === "probing") {
+						state.jsonWarnings.push({
+							code: "W114",
+							line: this.line,
+							character: this.char,
+							data: [ "\\x-" ]
+						});
+					} else if (state.jsonMode) {
 						this.trigger("warning", {
 							code: "W114",
 							line: this.line,
@@ -1316,7 +1357,7 @@ Lexer.prototype = {
 
 		if (state.option.smarttabs) {
 			// Negative look-behind for "//"
-			match = this.input.match(/(\/\/)? \t/);
+			match = this.input.match(/(\/\/|^\s?\*)? \t/);
 			at = match && !match[1] ? 0 : -1;
 		} else {
 			at = this.input.search(/ \t|\t [^\*]/);
@@ -1350,7 +1391,7 @@ Lexer.prototype = {
 			}
 
 			if (this.peek() === "") { // EOL
-				if (state.option.trailing) {
+				if (!/^\s*$/.test(this.lines[this.line - 1]) && state.option.trailing) {
 					this.trigger("warning", { code: "W102", line: this.line, character: start });
 				}
 			}
@@ -1439,6 +1480,33 @@ Lexer.prototype = {
 	token: function () {
 		var token;
 
+		function isReserved(token, isProperty) {
+			if (!token.reserved) {
+				return false;
+			}
+
+			if (token.meta && token.meta.isFutureReservedWord) {
+				// ES3 FutureReservedWord in an ES5 environment.
+				if (state.option.es5 && !token.meta.es5) {
+					return false;
+				}
+
+				// Some ES5 FutureReservedWord identifiers are active only
+				// within a strict mode environment.
+				if (token.meta.strictOnly) {
+					if (!state.option.strict && !state.directive["use strict"]) {
+						return false;
+					}
+				}
+
+				if (isProperty) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+
 		// Produce a token object.
 		var create = function (type, value, isProperty) {
 			/*jshint validthis:true */
@@ -1452,9 +1520,9 @@ Lexer.prototype = {
 				switch (value) {
 				case ".":
 				case ")":
-				case ",":
 				case "~":
 				case "#":
+				case "]":
 					this.prereg = false;
 					break;
 				default:
@@ -1471,6 +1539,11 @@ Lexer.prototype = {
 
 				if (_.has(state.syntax, value)) {
 					obj = Object.create(state.syntax[value] || state.syntax["(error)"]);
+
+					// If this can't be a reserved keyword, reset the object.
+					if (!isReserved(obj, isProperty && type === "(identifier)")) {
+						obj = null;
+					}
 				}
 			}
 
@@ -1519,7 +1592,7 @@ Lexer.prototype = {
 			case Token.StringLiteral:
 				this.trigger("String", {
 					line: this.line,
-					char: this.character,
+					char: this.char,
 					from: this.from,
 					value: token.value,
 					quote: token.quote
@@ -1529,7 +1602,7 @@ Lexer.prototype = {
 			case Token.Identifier:
 				this.trigger("Identifier", {
 					line: this.line,
-					char: this.character,
+					char: this.char,
 					from: this.form,
 					name: token.value,
 					isProperty: state.tokens.curr.id === "."
@@ -1551,13 +1624,22 @@ Lexer.prototype = {
 					});
 				}
 
-				if (state.jsonMode && token.base === 16) {
-					this.trigger("warning", {
-						code: "W114",
-						line: this.line,
-						character: this.char,
-						data: [ "0x-" ]
-					});
+				if (token.base === 16) {
+					if (state.jsonMode === "probing") {
+						state.jsonWarnings.push({
+							code: "W114",
+							line: this.line,
+							character: this.char,
+							data: [ "0x-" ]
+						});
+					} else if (state.jsonMode) {
+						this.trigger("warning", {
+							code: "W114",
+							line: this.line,
+							character: this.char,
+							data: [ "0x-" ]
+						});
+					}
 				}
 
 				if (state.directive["use strict"] && token.base === 8) {
@@ -1570,7 +1652,7 @@ Lexer.prototype = {
 
 				this.trigger("Number", {
 					line: this.line,
-					char: this.character,
+					char: this.char,
 					from: this.from,
 					value: token.value,
 					base: token.base,
@@ -1592,7 +1674,7 @@ Lexer.prototype = {
 						type: token.commentType,
 						isSpecial: token.isSpecial,
 						line: this.line,
-						character: this.character,
+						character: this.char,
 						from: this.from
 					};
 				}

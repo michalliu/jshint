@@ -1,9 +1,8 @@
 /*jshint boss: true, rhino: true, unused: true, undef: true, white: true, quotmark: double */
+/*global JSHINT */
 
 (function (args) {
 	"use strict";
-
-	var JSHINT = require("/src/stable/jshint.js").JSHINT;
 
 	var filenames = [];
 	var optstr; // arg1=val1,arg2=val2,...
